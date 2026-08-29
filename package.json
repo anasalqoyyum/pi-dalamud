@@ -6,6 +6,7 @@
     "build": "pnpm build:bridge && pnpm build:plugin",
     "build:bridge": "pnpm --dir src/bridge build",
     "build:plugin": "dotnet build src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --nologo",
+    "build:plugin:release": "dotnet build src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --configuration Release --nologo",
     "test": "pnpm test:bridge && pnpm test:plugin",
     "test:bridge": "pnpm --dir src/bridge test",
     "test:plugin": "dotnet test --project tests/PiDalamud.Plugin.Tests/PiDalamud.Plugin.Tests.csproj",
