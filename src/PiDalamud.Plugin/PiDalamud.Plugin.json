@@ -1,0 +1,9 @@
+{
+  "Author": "Pi Dalamud contributors",
+  "Name": "Pi Chat",
+  "Punchline": "Private local Pi chat for Dalamud.",
+  "Description": "Talk to a local Pi coding agent in a dedicated in-game window.",
+  "InternalName": "PiDalamud.Plugin",
+  "ApplicableVersion": "any",
+  "Tags": ["pi", "chat", "local"]
+}

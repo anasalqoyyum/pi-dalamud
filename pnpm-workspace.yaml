@@ -1,0 +1,6 @@
+packages:
+  - src/bridge
+
+onlyBuiltDependencies:
+  - esbuild
+  - unrs-resolver

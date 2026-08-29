@@ -1,0 +1,19 @@
+{
+  "name": "pi-dalamud",
+  "private": true,
+  "packageManager": "pnpm@10.26.1",
+  "scripts": {
+    "build": "pnpm build:bridge && pnpm build:plugin",
+    "build:bridge": "pnpm --dir src/bridge build",
+    "build:plugin": "dotnet build src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --nologo",
+    "test": "pnpm test:bridge && pnpm test:plugin",
+    "test:bridge": "pnpm --dir src/bridge test",
+    "test:plugin": "dotnet test --project tests/PiDalamud.Plugin.Tests/PiDalamud.Plugin.Tests.csproj",
+    "lint": "pnpm lint:bridge && pnpm lint:plugin",
+    "lint:bridge": "pnpm --dir src/bridge lint",
+    "lint:plugin": "dotnet build src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --nologo --no-restore",
+    "format": "pnpm format:bridge && pnpm format:plugin",
+    "format:bridge": "pnpm --dir src/bridge format",
+    "format:plugin": "dotnet format whitespace src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --verify-no-changes --no-restore"
+  }
+}
