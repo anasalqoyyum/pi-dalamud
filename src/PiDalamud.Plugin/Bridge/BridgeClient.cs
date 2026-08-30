@@ -58,6 +58,10 @@ public sealed class BridgeClient : IDisposable
 
     public bool TryNewSession() => TryQueue(BridgeProtocol.NewSession());
 
+    public bool TrySelectModel(string preset) => TryQueue(BridgeProtocol.SelectModel(preset));
+
+    public bool TrySetThinkingLevel(string level) => TryQueue(BridgeProtocol.SetThinkingLevel(level));
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)

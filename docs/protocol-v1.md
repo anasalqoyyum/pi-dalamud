@@ -14,6 +14,12 @@ The bridge stores a token containing 32 random bytes in its private configuratio
 
 Each WebSocket text frame contains one JSON object. Every object has `"version": 1` and one supported `type`. The maximum UTF-8 payload is 65,536 bytes. Binary frames, malformed JSON, extra fields, unsupported versions, and unknown message types are rejected. `src/bridge/src/protocol.ts` and `src/PiDalamud.Plugin/Bridge/BridgeMessage.cs` enforce this contract.
 
+## Bridge logs
+
+The bridge writes one JSON object per log line. It records `plugin_message_received` and `plugin_message_sent` events with the message type, request ID when present, and text length for prompts or completed responses. It records each Pi `thinking_start` event as `pi_thinking` with the active request ID when available.
+
+Logs do not contain bearer tokens, prompt text, completed response text, or thinking text.
+
 ## Plugin to bridge
 
 ### `prompt`
@@ -60,6 +66,37 @@ The request ID must match the active prompt.
 ```
 
 The bridge rejects this message while a prompt is active.
+
+### `select_model`
+
+```json
+{
+  "version": 1,
+  "type": "select_model",
+  "preset": "luna"
+}
+```
+
+The only supported presets are:
+
+| Preset | Pi provider/model | Default thinking |
+| --- | --- | --- |
+| `luna` | `openai-codex/gpt-5.6-luna` | `max` |
+| `sol` | `openai-codex/gpt-5.6-sol` | `high` |
+
+The bridge rejects this message while a prompt is active. A successful model change also applies the preset's default thinking level.
+
+### `set_thinking_level`
+
+```json
+{
+  "version": 1,
+  "type": "set_thinking_level",
+  "level": "off"
+}
+```
+
+`level` must be one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`, and must be reported as available for the current model.
 
 ## Bridge to plugin
 
@@ -116,6 +153,22 @@ The bridge sends this only after Pi emits `agent_settled` and `get_last_assistan
 
 `state` is `starting`, `idle`, `running`, or `error`. `activeRequestId` is present only while a prompt is active.
 
+### `model_state`
+
+```json
+{
+  "version": 1,
+  "type": "model_state",
+  "preset": "luna",
+  "provider": "openai-codex",
+  "modelId": "gpt-5.6-luna",
+  "thinkingLevel": "max",
+  "availableThinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+}
+```
+
+The bridge sends `model_state` after `get_status`, after a successful model or thinking-level change, and after a supervised Pi restart. `preset`, `provider`, `modelId`, and `thinkingLevel` may be `null` when Pi has no recognized current model. The plugin must build its thinking-level picker from `availableThinkingLevels`.
+
 ### `aborted`
 
 ```json
@@ -150,13 +203,15 @@ The bridge sends this only after Pi emits `agent_settled` and `get_last_assistan
 - `pi_prompt_failed`
 - `pi_abort_failed`
 - `session_switch_failed`
+- `model_switch_failed`
+- `thinking_level_failed`
 - `internal_error`
 
 Error messages never contain stack traces, provider credentials, prompt text, filesystem paths, or raw Pi events.
 
 ## Pi RPC mapping
 
-The bridge accepts only the four plugin operations above. It writes these RPC command types to Pi:
+The bridge accepts only the six plugin operations above. It writes these RPC command types to Pi:
 
 | Plugin operation | Pi RPC command |
 | --- | --- |
@@ -164,6 +219,8 @@ The bridge accepts only the four plugin operations above. It writes these RPC co
 | `abort` | `abort` |
 | `get_status` | `get_state` |
 | `new_session` | `new_session`, followed by `get_state` |
+| `select_model` | `set_model`, followed by `get_available_thinking_levels` and the preset default `set_thinking_level` |
+| `set_thinking_level` | `get_available_thinking_levels`, then `set_thinking_level` |
 | Completed response | `get_last_assistant_text` after `agent_settled` |
 
 There is no raw RPC message, shell operation, workspace field, or `bash` route in this protocol.

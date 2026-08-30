@@ -75,6 +75,48 @@ describe("PiRpcProcess", () => {
     );
   });
 
+  it("reports the start of each thinking block without exposing its text", async () => {
+    const worker = await createWorker();
+    const events: string[] = [];
+    const thinking = new Promise<void>((resolve) => {
+      worker.onEvent((event) => {
+        events.push(event.type);
+        if (event.type === "thinking_started") resolve();
+      });
+    });
+
+    await worker.prompt("explain the test");
+    await thinking;
+
+    expect(events).toContain("thinking_started");
+  });
+
+  it("changes models and exposes the available thinking levels", async () => {
+    const worker = await createWorker();
+
+    await expect(worker.getState()).resolves.toMatchObject({
+      model: { provider: "openai-codex", id: "gpt-5.6-luna" },
+      thinkingLevel: "max",
+    });
+    await expect(worker.getAvailableThinkingLevels()).resolves.toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+
+    await worker.setModel("openai-codex", "gpt-5.6-sol");
+    await worker.setThinkingLevel("high");
+
+    await expect(worker.getState()).resolves.toMatchObject({
+      model: { provider: "openai-codex", id: "gpt-5.6-sol" },
+      thinkingLevel: "high",
+    });
+  });
+
   it("keeps Unicode separators inside the final text", async () => {
     const worker = await createWorker();
     const settled = new Promise<void>((resolve) => {
@@ -167,6 +209,9 @@ describe("PiRpcProcess", () => {
     await worker.getLastAssistantText();
     await worker.getState();
     await worker.newSession();
+    await worker.setModel("openai-codex", "gpt-5.6-sol");
+    await worker.setThinkingLevel("high");
+    await worker.getAvailableThinkingLevels();
 
     const commands = (await readFile(commandLog, "utf8")).trim().split("\n");
     expect(new Set(commands)).toEqual(
@@ -175,6 +220,9 @@ describe("PiRpcProcess", () => {
         "prompt",
         "get_last_assistant_text",
         "new_session",
+        "set_model",
+        "set_thinking_level",
+        "get_available_thinking_levels",
       ]),
     );
     expect(commands).not.toContain("bash");

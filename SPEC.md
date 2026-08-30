@@ -38,8 +38,12 @@ The dedicated window contains:
 - A scrollable transcript with user and assistant messages.
 - A multiline prompt editor.
 - **Send**, **Stop**, and **New session** buttons.
+- A model selector modal exposing `openai-codex/gpt-5.6-luna` (`max`) and `openai-codex/gpt-5.6-sol` (`high`).
+- A thinking-level selector populated from Pi's `get_available_thinking_levels` response, including `off` when supported.
 - A connection indicator with `Disconnected`, `Connecting`, `Idle`, `Running`, and `Error` states.
 - One compact status line for the current request.
+
+On startup, Pi uses the provider/model configured in Pi's own settings. The bridge reports that current model, and the selector changes it at runtime only through the two fixed presets above.
 
 The MVP returns only the completed assistant response. It does not stream token deltas. While Pi works, the window shows `Running` and the native chat may show `[Pi] Working...` once.
 
@@ -59,6 +63,7 @@ When Pi finishes, the plugin adds the final text to the transcript. It may print
 - Pi subprocess control through strict JSONL RPC.
 - Final, non-streamed assistant responses.
 - Abort, status, new session, reconnect, and clean plugin unload.
+- Two fixed model presets and capability-aware thinking-level changes while Pi is idle.
 - Unit tests for protocol parsing and bridge behavior.
 - A fake Pi process for integration tests.
 
@@ -69,6 +74,7 @@ When Pi finishes, the plugin adds the final text to the transcript. It may print
 - Sending Pi output to FFXIV servers.
 - LAN or internet access to the bridge.
 - Multiple users, tenants, workspaces, or concurrent Pi sessions.
+- Arbitrary provider/model selection or model IDs supplied by the plugin.
 - Raw Pi RPC access from the plugin.
 - Raw RPC `bash` commands.
 - Token streaming, tool-call visualization, or in-game approval dialogs.
@@ -177,6 +183,7 @@ pi-dalamud/
 │       ├── src/
 │       │   ├── index.ts
 │       │   ├── config.ts
+│       │   ├── model-presets.ts
 │       │   ├── protocol.ts
 │       │   ├── ws-server.ts
 │       │   └── pi-rpc-process.ts
@@ -267,6 +274,37 @@ The bridge aborts only the matching active request.
 
 Reject this request while Pi runs. The plugin asks the user for confirmation before sending it.
 
+#### `select_model`
+
+```json
+{
+  "version": 1,
+  "type": "select_model",
+  "preset": "luna"
+}
+```
+
+The bridge accepts only these fixed presets and applies the listed default thinking level:
+
+| Preset | Pi provider/model | Default thinking |
+| ------ | ----------------- | ---------------- |
+| `luna` | `openai-codex/gpt-5.6-luna` | `max` |
+| `sol`  | `openai-codex/gpt-5.6-sol`  | `high` |
+
+Reject this request while Pi runs.
+
+#### `set_thinking_level`
+
+```json
+{
+  "version": 1,
+  "type": "set_thinking_level",
+  "level": "off"
+}
+```
+
+The bridge accepts `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max` only when Pi reports the level through `get_available_thinking_levels`. Reject this request while Pi runs.
+
 ### Bridge-to-plugin messages
 
 #### `ready`
@@ -320,6 +358,22 @@ Send `settled` only after Pi emits `agent_settled`. Obtain the final text from t
 
 Valid states are `starting`, `idle`, `running`, and `error`.
 
+#### `model_state`
+
+```json
+{
+  "version": 1,
+  "type": "model_state",
+  "preset": "luna",
+  "provider": "openai-codex",
+  "modelId": "gpt-5.6-luna",
+  "thinkingLevel": "max",
+  "availableThinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+}
+```
+
+The bridge sends this after `get_status`, after a successful model or thinking-level change, after creating a new session, and after a supervised Pi restart. The nullable model fields identify an unrecognized Pi model without exposing arbitrary model selection to the plugin. The plugin builds its thinking-level selector from `availableThinkingLevels`.
+
 #### `aborted`
 
 ```json
@@ -356,6 +410,8 @@ Required MVP codes:
 - `pi_prompt_failed`
 - `pi_abort_failed`
 - `session_switch_failed`
+- `model_switch_failed`
+- `thinking_level_failed`
 - `internal_error`
 
 ## Pi RPC worker
@@ -386,6 +442,8 @@ The bridge maps only these plugin operations to Pi RPC:
 | `abort`          | `abort`                                         |
 | `get_status`     | `get_state`                                     |
 | `new_session`    | `new_session`                                   |
+| `select_model`   | `set_model`, then `get_available_thinking_levels` and the preset default `set_thinking_level` |
+| `set_thinking_level` | `get_available_thinking_levels`, then `set_thinking_level` |
 | final response   | `get_last_assistant_text` after `agent_settled` |
 
 Do not expose Pi's RPC `bash` command. Do not accept arbitrary Pi RPC objects from the plugin.
@@ -470,12 +528,16 @@ These requirements are acceptance criteria, not suggestions:
 - Keep the Pi workspace in bridge configuration.
 - Start Pi with the exact read-only flags in this specification.
 - Keep provider credentials in the bridge or Pi configuration, not the plugin.
+- Allow the plugin to select only the named model presets; keep provider and model IDs in the bridge's preset map.
 - Expose no raw Pi RPC passthrough.
 - Expose no bridge operation that executes a shell command.
 - Read no ambient game chat.
 - Send no Pi output to game chat servers.
 - Trigger no gameplay actions.
-- Log bridge lifecycle and stable error codes without prompt text by default.
+- Log bridge lifecycle, inbound and outbound protocol message types, request IDs,
+  text lengths, and stable error codes without prompt, response, or thinking text.
+- Log each Pi thinking block as a concise `pi_thinking` event without recording its
+  content.
 
 Square Enix prohibits third-party tools. This private, local, manually invoked design does not make Dalamud use compliant. It limits the feature to chat UI and keeps it separate from gameplay automation.
 
@@ -566,6 +628,7 @@ Completion criterion: a developer can follow the README from a clean checkout an
 - Long responses remain readable in the ImGui window.
 - **Stop** aborts an active request.
 - **New session** asks for confirmation.
+- Model selection applies the documented preset default, and the thinking selector shows only Pi-reported levels.
 - Bridge loss does not stall a frame.
 - Plugin reload leaves no duplicate command or draw handler.
 - Normal party and tell chat never reaches the bridge.
@@ -580,7 +643,7 @@ The MVP is complete when all statements below are true:
 3. The plugin receives and displays Pi's completed response.
 4. The plugin does not require streamed token support.
 5. The bridge listens only on authenticated loopback WebSocket connections.
-6. The plugin never supplies a workspace path or raw Pi command.
+6. The plugin never supplies a workspace path, arbitrary model ID, or raw Pi command.
 7. Pi starts with read-only tools and cannot receive an RPC `bash` request through the bridge.
 8. Ambient FFXIV chat never becomes Pi input.
 9. Pi output remains local to the plugin UI and local chat notices.

@@ -25,8 +25,37 @@ describe("plugin protocol v1", () => {
     });
   });
 
+  it("parses the fixed model presets and thinking levels", () => {
+    expect(
+      parsePluginMessage(
+        JSON.stringify({ version: 1, type: "select_model", preset: "luna" }),
+      ),
+    ).toEqual({ version: 1, type: "select_model", preset: "luna" });
+    expect(
+      parsePluginMessage(
+        JSON.stringify({
+          version: 1,
+          type: "set_thinking_level",
+          level: "off",
+        }),
+      ),
+    ).toEqual({
+      version: 1,
+      type: "set_thinking_level",
+      level: "off",
+    });
+  });
+
   it.each([
     ["unknown message", { version: 1, type: "bash", command: "id" }],
+    [
+      "unknown model preset",
+      { version: 1, type: "select_model", preset: "other" },
+    ],
+    [
+      "unknown thinking level",
+      { version: 1, type: "set_thinking_level", level: "extreme" },
+    ],
     ["wrong version", { version: 2, type: "get_status" }],
     ["unknown field", { version: 1, type: "get_status", command: "bash" }],
     [

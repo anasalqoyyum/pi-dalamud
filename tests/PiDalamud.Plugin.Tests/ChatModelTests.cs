@@ -93,6 +93,38 @@ public sealed class ChatModelTests
     }
 
     [Fact]
+    public void AppliesModelStateAndKeepsSettingsChangesIdleOnly()
+    {
+        var model = new ChatModel();
+        model.Apply(new StatusEvent(BridgeRuntimeState.Idle, "session-1", null));
+
+        Assert.True(model.TryBeginModelChange());
+        Assert.False(model.CanSend);
+        model.Apply(new ModelStateEvent(
+            "sol",
+            "openai-codex",
+            "gpt-5.6-sol",
+            "high",
+            ["off", "minimal", "low", "medium", "high"]));
+
+        Assert.Equal("sol", model.ModelPreset);
+        Assert.Equal("openai-codex", model.Provider);
+        Assert.Equal("gpt-5.6-sol", model.ModelId);
+        Assert.Equal("high", model.ThinkingLevel);
+        Assert.Equal(["off", "minimal", "low", "medium", "high"], model.AvailableThinkingLevels);
+        Assert.True(model.CanChangeSettings);
+
+        Assert.True(model.TryBeginThinkingLevelChange());
+        model.Apply(new BridgeErrorEvent(
+            "thinking_level_failed",
+            "That thinking level is not available",
+            null));
+
+        Assert.Equal(BridgeConnectionState.Idle, model.ConnectionState);
+        Assert.True(model.CanChangeSettings);
+    }
+
+    [Fact]
     public void MapsConnectionAndRuntimeEventsToUiStates()
     {
         var model = new ChatModel();

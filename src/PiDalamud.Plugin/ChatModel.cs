@@ -23,6 +23,8 @@ public sealed class ChatModel
     private readonly List<TranscriptEntry> transcript = [];
     private PendingPrompt? pendingPrompt;
     private bool newSessionRequested;
+    private bool modelChangePending;
+    private bool thinkingLevelChangePending;
 
     public IReadOnlyList<TranscriptEntry> Transcript => transcript;
 
@@ -35,10 +37,24 @@ public sealed class ChatModel
 
     public string? ActiveRequestId { get; private set; }
 
+    public string? ModelPreset { get; private set; }
+
+    public string? Provider { get; private set; }
+
+    public string? ModelId { get; private set; }
+
+    public string? ThinkingLevel { get; private set; }
+
+    public IReadOnlyList<string> AvailableThinkingLevels { get; private set; } = [];
+
     public bool CanSend =>
         ConnectionState == BridgeConnectionState.Idle &&
         pendingPrompt is null &&
-        ActiveRequestId is null;
+        ActiveRequestId is null &&
+        !modelChangePending &&
+        !thinkingLevelChangePending;
+
+    public bool CanChangeSettings => CanSend;
 
     public bool CanStop => ActiveRequestId is not null;
 
@@ -85,6 +101,42 @@ public sealed class ChatModel
         StatusLine = ConnectionState == BridgeConnectionState.Idle ? "Ready" : StatusLine;
     }
 
+    public bool TryBeginModelChange()
+    {
+        if (!CanChangeSettings)
+        {
+            return false;
+        }
+
+        modelChangePending = true;
+        StatusLine = "Changing model";
+        return true;
+    }
+
+    public void FailQueuedModelChange()
+    {
+        modelChangePending = false;
+        StatusLine = ConnectionState == BridgeConnectionState.Idle ? "Ready" : StatusLine;
+    }
+
+    public bool TryBeginThinkingLevelChange()
+    {
+        if (!CanChangeSettings)
+        {
+            return false;
+        }
+
+        thinkingLevelChangePending = true;
+        StatusLine = "Changing thinking level";
+        return true;
+    }
+
+    public void FailQueuedThinkingLevelChange()
+    {
+        thinkingLevelChangePending = false;
+        StatusLine = ConnectionState == BridgeConnectionState.Idle ? "Ready" : StatusLine;
+    }
+
     public void Apply(BridgeEvent bridgeEvent)
     {
         switch (bridgeEvent)
@@ -96,12 +148,14 @@ public sealed class ChatModel
             case DisconnectedEvent disconnected:
                 FailActiveRequest("Bridge disconnected during the request");
                 newSessionRequested = false;
+                ClearPendingChanges();
                 ConnectionState = BridgeConnectionState.Disconnected;
                 StatusLine = disconnected.Message;
                 break;
             case ProtocolFailureEvent protocolFailure:
                 FailActiveRequest(protocolFailure.Message);
                 newSessionRequested = false;
+                ClearPendingChanges();
                 ConnectionState = BridgeConnectionState.Error;
                 StatusLine = protocolFailure.Message;
                 break;
@@ -115,6 +169,7 @@ public sealed class ChatModel
                 SessionId = ready.SessionId;
                 ActiveRequestId = null;
                 pendingPrompt = null;
+                ClearPendingChanges();
                 ConnectionState = BridgeConnectionState.Idle;
                 StatusLine = "Ready";
                 break;
@@ -126,6 +181,9 @@ public sealed class ChatModel
                 break;
             case StatusEvent status:
                 ApplyStatus(status);
+                break;
+            case ModelStateEvent modelState:
+                ApplyModelState(modelState);
                 break;
             case AbortedEvent aborted:
                 if (ActiveRequestId == aborted.RequestId)
@@ -192,6 +250,21 @@ public sealed class ChatModel
         };
     }
 
+    private void ApplyModelState(ModelStateEvent modelState)
+    {
+        ModelPreset = modelState.Preset;
+        Provider = modelState.Provider;
+        ModelId = modelState.ModelId;
+        ThinkingLevel = modelState.ThinkingLevel;
+        AvailableThinkingLevels = modelState.AvailableThinkingLevels;
+        modelChangePending = false;
+        thinkingLevelChangePending = false;
+        if (ConnectionState == BridgeConnectionState.Idle && ActiveRequestId is null)
+        {
+            StatusLine = "Ready";
+        }
+    }
+
     private void ApplyError(BridgeErrorEvent error)
     {
         Append(TranscriptRole.Error, error.Message, error.RequestId);
@@ -206,12 +279,24 @@ public sealed class ChatModel
             newSessionRequested = false;
         }
 
+        if (error.Code == "model_switch_failed")
+        {
+            modelChangePending = false;
+        }
+
+        if (error.Code == "thinking_level_failed")
+        {
+            thinkingLevelChangePending = false;
+        }
+
         if (error.Code is
             "busy" or
             "request_not_active" or
             "pi_prompt_failed" or
             "pi_abort_failed" or
-            "session_switch_failed")
+            "session_switch_failed" or
+            "model_switch_failed" or
+            "thinking_level_failed")
         {
             StatusLine = error.Message;
             return;
@@ -236,6 +321,12 @@ public sealed class ChatModel
 
         ActiveRequestId = null;
         pendingPrompt = null;
+    }
+
+    private void ClearPendingChanges()
+    {
+        modelChangePending = false;
+        thinkingLevelChangePending = false;
     }
 
     private void Append(TranscriptRole role, string text, string? requestId) =>

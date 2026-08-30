@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  modelPresetSchema,
+  thinkingLevelSchema,
+  type ModelPreset,
+  type ThinkingLevel,
+} from "./model-presets.js";
+
 export const PROTOCOL_VERSION = 1 as const;
 export const MAX_FRAME_BYTES = 64 * 1024;
 
@@ -37,11 +44,25 @@ const newSessionSchema = z.strictObject({
   type: z.literal("new_session"),
 });
 
+const selectModelSchema = z.strictObject({
+  ...envelope,
+  type: z.literal("select_model"),
+  preset: modelPresetSchema,
+});
+
+const setThinkingLevelSchema = z.strictObject({
+  ...envelope,
+  type: z.literal("set_thinking_level"),
+  level: thinkingLevelSchema,
+});
+
 export const pluginMessageSchema = z.discriminatedUnion("type", [
   promptSchema,
   abortSchema,
   getStatusSchema,
   newSessionSchema,
+  selectModelSchema,
+  setThinkingLevelSchema,
 ]);
 
 export type PluginMessage = z.infer<typeof pluginMessageSchema>;
@@ -59,7 +80,17 @@ export type BridgeErrorCode =
   | "pi_prompt_failed"
   | "pi_abort_failed"
   | "session_switch_failed"
+  | "model_switch_failed"
+  | "thinking_level_failed"
   | "internal_error";
+
+export type ModelState = {
+  readonly preset: ModelPreset | null;
+  readonly provider: string | null;
+  readonly modelId: string | null;
+  readonly thinkingLevel: ThinkingLevel | null;
+  readonly availableThinkingLevels: readonly ThinkingLevel[];
+};
 
 export type BridgeMessage =
   | {
@@ -91,6 +122,15 @@ export type BridgeMessage =
       readonly version: 1;
       readonly type: "aborted";
       readonly requestId: string;
+    }
+  | {
+      readonly version: 1;
+      readonly type: "model_state";
+      readonly preset: ModelPreset | null;
+      readonly provider: string | null;
+      readonly modelId: string | null;
+      readonly thinkingLevel: ThinkingLevel | null;
+      readonly availableThinkingLevels: readonly ThinkingLevel[];
     }
   | {
       readonly version: 1;

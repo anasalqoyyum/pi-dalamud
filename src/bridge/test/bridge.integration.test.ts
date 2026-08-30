@@ -15,7 +15,16 @@ const token = "test-token-with-more-than-thirty-two-random-bytes";
 const servers: BridgeServer[] = [];
 const clients: WebSocket[] = [];
 
-async function startBridge(commandLog?: string): Promise<{
+type LogEntry = {
+  readonly level: "info" | "error";
+  readonly event: string;
+  readonly context: Readonly<Record<string, unknown>>;
+};
+
+async function startBridge(
+  commandLog?: string,
+  logs: LogEntry[] = [],
+): Promise<{
   readonly server: BridgeServer;
   readonly url: string;
 }> {
@@ -35,8 +44,10 @@ async function startBridge(commandLog?: string): Promise<{
         onStderr: () => undefined,
       }),
     log: {
-      info: () => undefined,
-      error: () => undefined,
+      info: (event, context = {}) =>
+        logs.push({ level: "info", event, context }),
+      error: (event, context = {}) =>
+        logs.push({ level: "error", event, context }),
     },
   });
   servers.push(server);
@@ -83,6 +94,103 @@ describe("authenticated WebSocket bridge", () => {
       sessionId: "fake-session-1",
       text: "Fake Pi completed: answer me",
     });
+  });
+
+  it("selects a fixed model and exposes its thinking capabilities", async () => {
+    const { url } = await startBridge();
+    const client = await connect(url);
+
+    await expect(client.next()).resolves.toMatchObject({
+      type: "ready",
+      state: "idle",
+    });
+    client.send({ version: 1, type: "get_status" });
+    await expect(client.next()).resolves.toMatchObject({ type: "status" });
+    await expect(client.next()).resolves.toEqual({
+      version: 1,
+      type: "model_state",
+      preset: "luna",
+      provider: "openai-codex",
+      modelId: "gpt-5.6-luna",
+      thinkingLevel: "max",
+      availableThinkingLevels: [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+      ],
+    });
+
+    client.send({ version: 1, type: "select_model", preset: "sol" });
+    await expect(client.next()).resolves.toEqual({
+      version: 1,
+      type: "model_state",
+      preset: "sol",
+      provider: "openai-codex",
+      modelId: "gpt-5.6-sol",
+      thinkingLevel: "high",
+      availableThinkingLevels: ["off", "minimal", "low", "medium", "high"],
+    });
+
+    client.send({ version: 1, type: "set_thinking_level", level: "max" });
+    await expect(client.next()).resolves.toMatchObject({
+      type: "error",
+      code: "thinking_level_failed",
+    });
+
+    client.send({ version: 1, type: "set_thinking_level", level: "off" });
+    await expect(client.next()).resolves.toMatchObject({
+      type: "model_state",
+      preset: "sol",
+      thinkingLevel: "off",
+    });
+  });
+
+  it("logs protocol traffic and thinking without recording message contents", async () => {
+    const logs: LogEntry[] = [];
+    const { url } = await startBridge(undefined, logs);
+    const client = await connect(url);
+
+    await client.next();
+    const requestId = crypto.randomUUID();
+    const prompt = "private prompt text";
+    client.send({ version: 1, type: "prompt", requestId, text: prompt });
+
+    await client.next();
+    await client.next();
+
+    expect(logs).toContainEqual({
+      level: "info",
+      event: "plugin_message_received",
+      context: { type: "prompt", requestId, textLength: prompt.length },
+    });
+    expect(logs).toContainEqual({
+      level: "info",
+      event: "pi_thinking",
+      context: { requestId },
+    });
+    expect(
+      logs.some(
+        ({ event, context }) =>
+          event === "plugin_message_sent" &&
+          context.type === "accepted" &&
+          context.requestId === requestId,
+      ),
+    ).toBe(true);
+    expect(
+      logs.some(
+        ({ event, context }) =>
+          event === "plugin_message_sent" &&
+          context.type === "settled" &&
+          context.requestId === requestId &&
+          context.textLength ===
+            "Fake Pi completed: private prompt text".length,
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(logs)).not.toContain(prompt);
   });
 
   it("orders accepted before settled when Pi settles before its prompt response", async () => {
@@ -202,7 +310,7 @@ describe("authenticated WebSocket bridge", () => {
     });
 
     const commands = (await readFile(commandLog, "utf8")).trim().split("\n");
-    expect(commands).toEqual(["get_state"]);
+    expect(commands).toEqual(["get_state", "get_available_thinking_levels"]);
     expect(commands).not.toContain("bash");
   });
 
@@ -294,6 +402,10 @@ describe("authenticated WebSocket bridge", () => {
     await expect(client.next()).resolves.toMatchObject({
       type: "ready",
       state: "idle",
+    });
+    await expect(client.next()).resolves.toMatchObject({
+      type: "model_state",
+      preset: "luna",
     });
 
     const recoveredRequestId = crypto.randomUUID();

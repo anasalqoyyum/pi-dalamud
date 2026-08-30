@@ -4,12 +4,17 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { z } from "zod";
 
+import { thinkingLevelSchema, type ThinkingLevel } from "./model-presets.js";
+
 const commandSchema = z.enum([
   "prompt",
   "abort",
   "get_state",
   "new_session",
   "get_last_assistant_text",
+  "set_model",
+  "set_thinking_level",
+  "get_available_thinking_levels",
 ]);
 
 const responseSchema = z.strictObject({
@@ -21,9 +26,20 @@ const responseSchema = z.strictObject({
   error: z.string().optional(),
 });
 
+const modelDataSchema = z.object({
+  provider: z.string().min(1),
+  id: z.string().min(1),
+});
+
 const stateDataSchema = z.object({
   isStreaming: z.boolean(),
   sessionId: z.string().min(1),
+  model: modelDataSchema.nullable().optional(),
+  thinkingLevel: thinkingLevelSchema,
+});
+
+const availableThinkingLevelsDataSchema = z.object({
+  levels: z.array(thinkingLevelSchema),
 });
 
 const lastAssistantTextDataSchema = z.object({
@@ -38,6 +54,13 @@ const agentSettledSchema = z.strictObject({
   type: z.literal("agent_settled"),
 });
 
+const thinkingStartSchema = z.object({
+  type: z.literal("message_update"),
+  assistantMessageEvent: z.object({
+    type: z.literal("thinking_start"),
+  }),
+});
+
 type RpcResponse = z.infer<typeof responseSchema>;
 
 type PendingRequest = {
@@ -46,11 +69,19 @@ type PendingRequest = {
   readonly reject: (error: Error) => void;
 };
 
-export type PiRpcEvent = { readonly type: "agent_settled" };
+export type PiRpcEvent =
+  { readonly type: "agent_settled" } | { readonly type: "thinking_started" };
 
 export type PiRpcState = {
   readonly isStreaming: boolean;
   readonly sessionId: string;
+  readonly model: PiRpcModel | null;
+  readonly thinkingLevel: ThinkingLevel;
+};
+
+export type PiRpcModel = {
+  readonly provider: string;
+  readonly id: string;
 };
 
 export type PiRpcProcessOptions = {
@@ -178,7 +209,30 @@ export class PiRpcProcess {
     if (!parsed.success)
       throw new PiRpcProtocolError("Pi returned invalid state data");
     this.sessionId = parsed.data.sessionId;
-    return parsed.data;
+    return {
+      ...parsed.data,
+      model: parsed.data.model ?? null,
+    };
+  }
+
+  public async setModel(provider: string, modelId: string): Promise<void> {
+    await this.sendCommand("set_model", { provider, modelId });
+  }
+
+  public async setThinkingLevel(level: ThinkingLevel): Promise<void> {
+    await this.sendCommand("set_thinking_level", { level });
+  }
+
+  public async getAvailableThinkingLevels(): Promise<ThinkingLevel[]> {
+    const response = await this.sendCommand(
+      "get_available_thinking_levels",
+      {},
+    );
+    const parsed = availableThinkingLevelsDataSchema.safeParse(response.data);
+    if (!parsed.success) {
+      throw new PiRpcProtocolError("Pi returned invalid thinking-level data");
+    }
+    return parsed.data.levels;
   }
 
   public async newSession(): Promise<string> {
@@ -317,6 +371,12 @@ export class PiRpcProcess {
     if (agentSettledSchema.safeParse(record).success) {
       for (const listener of this.listeners)
         listener({ type: "agent_settled" });
+      return;
+    }
+
+    if (thinkingStartSchema.safeParse(record).success) {
+      for (const listener of this.listeners)
+        listener({ type: "thinking_started" });
       return;
     }
 

@@ -21,6 +21,8 @@ This is a private, experimental project. Third-party tools may not be allowed by
 
 The bridge listens only on your computer (`127.0.0.1`). It does not read game chat, send Pi's responses to game chat servers, automate gameplay, or let the plugin choose arbitrary workspaces.
 
+The chat window exposes two fixed model presets: `openai-codex/gpt-5.6-luna` with `max` thinking and `openai-codex/gpt-5.6-sol` with `high` thinking. After selecting a model, the thinking picker shows only levels reported by Pi; `Off` is available when supported.
+
 ## What you need
 
 - FFXIV with XIVLauncher and Dalamud.

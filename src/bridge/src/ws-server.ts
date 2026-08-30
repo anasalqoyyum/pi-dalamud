@@ -10,7 +10,14 @@ import {
   PiRpcProcessExitError,
   PiRpcProtocolError,
   PiRpcStartError,
+  type PiRpcState,
 } from "./pi-rpc-process.js";
+import {
+  findModelPreset,
+  modelPresets,
+  type ModelPreset,
+  type ThinkingLevel,
+} from "./model-presets.js";
 import {
   MAX_FRAME_BYTES,
   PROTOCOL_VERSION,
@@ -18,6 +25,7 @@ import {
   parsePluginMessage,
   type BridgeErrorCode,
   type BridgeMessage,
+  type ModelState,
   type BridgeState,
   type PluginMessage,
 } from "./protocol.js";
@@ -53,6 +61,14 @@ type ActiveRequest = {
   settling: boolean;
 };
 
+const emptyModelState: ModelState = {
+  preset: null,
+  provider: null,
+  modelId: null,
+  thinkingLevel: null,
+  availableThinkingLevels: [],
+};
+
 export class BridgeServer {
   private readonly httpServer: Server;
   private readonly webSocketServer: WebSocketServer;
@@ -60,6 +76,7 @@ export class BridgeServer {
   private removePiListener: (() => void) | undefined;
   private state: BridgeState = "starting";
   private sessionId = "unavailable";
+  private modelState: ModelState = emptyModelState;
   private activeRequest: ActiveRequest | undefined;
   private stopping = false;
   private restartUsed = false;
@@ -131,7 +148,24 @@ export class BridgeServer {
     this.pi = pi;
     this.state = "starting";
     this.removePiListener = pi.onEvent((event) => {
-      if (event.type === "agent_settled") void this.handleAgentSettled(pi);
+      switch (event.type) {
+        case "agent_settled":
+          void this.handleAgentSettled(pi);
+          return;
+        case "thinking_started": {
+          const requestId = this.activeRequest?.requestId;
+          if (requestId) {
+            this.options.log.info("pi_thinking", { requestId });
+          } else {
+            this.options.log.info("pi_thinking");
+          }
+          return;
+        }
+        default: {
+          const exhaustive: never = event;
+          throw new Error(`Unhandled Pi event: ${String(exhaustive)}`);
+        }
+      }
     });
     void pi
       .waitForExit()
@@ -139,6 +173,8 @@ export class BridgeServer {
 
     try {
       const state = await pi.start();
+      if (this.pi !== pi) return;
+      await this.refreshModelState(pi, state);
       if (this.pi !== pi) return;
       this.sessionId = state.sessionId;
       this.state = state.isStreaming ? "running" : "idle";
@@ -208,6 +244,10 @@ export class BridgeServer {
     isBinary: boolean,
   ): Promise<void> {
     if (isBinary) {
+      this.options.log.error("invalid_message", {
+        direction: "inbound",
+        frame: "binary",
+      });
       this.sendError(
         socket,
         "invalid_message",
@@ -222,11 +262,17 @@ export class BridgeServer {
       message = parsePluginMessage(data.toString());
     } catch (error: unknown) {
       if (error instanceof ProtocolMessageError) {
+        this.options.log.error(error.code, { direction: "inbound" });
         this.sendError(socket, error.code, error.message);
         return;
       }
       throw error;
     }
+
+    this.options.log.info(
+      "plugin_message_received",
+      messageLogContext(message),
+    );
 
     switch (message.type) {
       case "prompt":
@@ -240,6 +286,12 @@ export class BridgeServer {
         return;
       case "new_session":
         await this.handleNewSession(socket);
+        return;
+      case "select_model":
+        await this.handleSelectModel(socket, message);
+        return;
+      case "set_thinking_level":
+        await this.handleSetThinkingLevel(socket, message);
         return;
       default: {
         const exhaustive: never = message;
@@ -355,14 +407,14 @@ export class BridgeServer {
     const pi = this.pi;
     if (pi && this.state !== "error" && this.state !== "starting") {
       try {
-        const state = await pi.getState();
-        this.sessionId = state.sessionId;
+        await this.refreshModelState(pi);
       } catch (error: unknown) {
         this.options.log.error("internal_error", { error: errorName(error) });
         this.state = "error";
       }
     }
     this.sendStatus(socket);
+    this.sendModelState(socket);
   }
 
   private async handleNewSession(socket: WebSocket): Promise<void> {
@@ -379,6 +431,7 @@ export class BridgeServer {
 
     try {
       this.sessionId = await pi.newSession();
+      await this.refreshModelState(pi);
       this.state = "idle";
       this.send(socket, {
         version: PROTOCOL_VERSION,
@@ -386,6 +439,7 @@ export class BridgeServer {
         sessionId: this.sessionId,
         state: "idle",
       });
+      this.sendModelState(socket);
     } catch (error: unknown) {
       this.options.log.error("session_switch_failed", {
         error: errorName(error),
@@ -394,6 +448,87 @@ export class BridgeServer {
         socket,
         "session_switch_failed",
         "Pi could not create a session",
+      );
+    }
+  }
+
+  private async handleSelectModel(
+    socket: WebSocket,
+    message: Extract<PluginMessage, { readonly type: "select_model" }>,
+  ): Promise<void> {
+    if (this.activeRequest || this.state === "running") {
+      this.sendError(socket, "busy", "Pi is already running");
+      return;
+    }
+
+    const pi = this.pi;
+    if (!pi || this.state === "error" || this.state === "starting") {
+      this.sendError(socket, "model_switch_failed", "Pi is unavailable");
+      return;
+    }
+
+    const preset: ModelPreset = message.preset;
+    const definition = modelPresets[preset];
+    try {
+      await pi.setModel(definition.provider, definition.modelId);
+      const availableThinkingLevels = await pi.getAvailableThinkingLevels();
+      if (!availableThinkingLevels.includes(definition.defaultThinkingLevel)) {
+        throw new PiRpcProtocolError(
+          "Pi does not support the preset thinking level",
+        );
+      }
+      await pi.setThinkingLevel(definition.defaultThinkingLevel);
+      await this.refreshModelState(pi);
+      this.broadcastModelState();
+    } catch (error: unknown) {
+      this.options.log.error("model_switch_failed", {
+        error: errorName(error),
+      });
+      this.sendError(
+        socket,
+        "model_switch_failed",
+        "Pi could not change the model",
+      );
+    }
+  }
+
+  private async handleSetThinkingLevel(
+    socket: WebSocket,
+    message: Extract<PluginMessage, { readonly type: "set_thinking_level" }>,
+  ): Promise<void> {
+    if (this.activeRequest || this.state === "running") {
+      this.sendError(socket, "busy", "Pi is already running");
+      return;
+    }
+
+    const pi = this.pi;
+    if (!pi || this.state === "error" || this.state === "starting") {
+      this.sendError(socket, "thinking_level_failed", "Pi is unavailable");
+      return;
+    }
+
+    const level: ThinkingLevel = message.level;
+    try {
+      const availableThinkingLevels = await pi.getAvailableThinkingLevels();
+      if (!availableThinkingLevels.includes(level)) {
+        this.sendError(
+          socket,
+          "thinking_level_failed",
+          "That thinking level is not available for the current model",
+        );
+        return;
+      }
+      await pi.setThinkingLevel(level);
+      await this.refreshModelState(pi);
+      this.broadcastModelState();
+    } catch (error: unknown) {
+      this.options.log.error("thinking_level_failed", {
+        error: errorName(error),
+      });
+      this.sendError(
+        socket,
+        "thinking_level_failed",
+        "Pi could not change the thinking level",
       );
     }
   }
@@ -452,14 +587,15 @@ export class BridgeServer {
       this.restartUsed = true;
       this.restartTimer = setTimeout(() => {
         void this.startPi()
-          .then(() =>
+          .then(() => {
             this.broadcast({
               version: PROTOCOL_VERSION,
               type: "ready",
               sessionId: this.sessionId,
               state: "idle",
-            }),
-          )
+            });
+            this.broadcastModelState();
+          })
           .catch((restartError: unknown) => {
             this.options.log.error("pi_start_failed", {
               error: errorName(restartError),
@@ -510,6 +646,43 @@ export class BridgeServer {
     }
   }
 
+  private async refreshModelState(
+    pi: PiRpcProcess,
+    state?: PiRpcState,
+  ): Promise<void> {
+    const currentState = state ?? (await pi.getState());
+    const availableThinkingLevels = await pi.getAvailableThinkingLevels();
+    if (this.pi !== pi) return;
+
+    this.sessionId = currentState.sessionId;
+    this.modelState = {
+      preset:
+        currentState.model === null
+          ? null
+          : findModelPreset(currentState.model.provider, currentState.model.id),
+      provider: currentState.model?.provider ?? null,
+      modelId: currentState.model?.id ?? null,
+      thinkingLevel: currentState.thinkingLevel,
+      availableThinkingLevels,
+    };
+  }
+
+  private sendModelState(socket: WebSocket): void {
+    this.send(socket, {
+      version: PROTOCOL_VERSION,
+      type: "model_state",
+      ...this.modelState,
+    });
+  }
+
+  private broadcastModelState(): void {
+    this.broadcast({
+      version: PROTOCOL_VERSION,
+      type: "model_state",
+      ...this.modelState,
+    });
+  }
+
   private sendError(
     socket: WebSocket,
     code: BridgeErrorCode,
@@ -540,9 +713,27 @@ export class BridgeServer {
   }
 
   private send(socket: WebSocket, message: BridgeMessage): void {
-    if (socket.readyState === WebSocket.OPEN)
+    if (socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(message));
+      this.options.log.info("plugin_message_sent", messageLogContext(message));
+    }
   }
+}
+
+function messageLogContext(
+  message: PluginMessage | BridgeMessage,
+): Readonly<Record<string, unknown>> {
+  const context: Record<string, unknown> = { type: message.type };
+
+  if ("requestId" in message && message.requestId)
+    context.requestId = message.requestId;
+  if ("sessionId" in message) context.sessionId = message.sessionId;
+  if ("state" in message) context.state = message.state;
+  if ("code" in message) context.code = message.code;
+  if (message.type === "prompt" || message.type === "settled")
+    context.textLength = [...message.text].length;
+
+  return context;
 }
 
 function isAuthorized(header: string | undefined, token: string): boolean {

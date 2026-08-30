@@ -30,6 +30,20 @@ public sealed class BridgeProtocolTests
     }
 
     [Fact]
+    public void ParsesModelStateAndThinkingCapabilities()
+    {
+        var message = BridgeProtocol.Parse(Encoding.UTF8.GetBytes(
+            """{"version":1,"type":"model_state","preset":"luna","provider":"openai-codex","modelId":"gpt-5.6-luna","thinkingLevel":"max","availableThinkingLevels":["off","high","max"]}"""));
+
+        var state = Assert.IsType<ModelStateEvent>(message);
+        Assert.Equal("luna", state.Preset);
+        Assert.Equal("openai-codex", state.Provider);
+        Assert.Equal("gpt-5.6-luna", state.ModelId);
+        Assert.Equal("max", state.ThinkingLevel);
+        Assert.Equal(["off", "high", "max"], state.AvailableThinkingLevels);
+    }
+
+    [Fact]
     public void ParsesEveryBridgeState()
     {
         foreach (var (wireState, expected) in new[]
@@ -80,6 +94,12 @@ public sealed class BridgeProtocolTests
         Assert.Equal(
             "{\"version\":1,\"type\":\"new_session\"}",
             Encoding.UTF8.GetString(BridgeProtocol.NewSession()));
+        Assert.Equal(
+            "{\"version\":1,\"type\":\"select_model\",\"preset\":\"luna\"}",
+            Encoding.UTF8.GetString(BridgeProtocol.SelectModel("luna")));
+        Assert.Equal(
+            "{\"version\":1,\"type\":\"set_thinking_level\",\"level\":\"off\"}",
+            Encoding.UTF8.GetString(BridgeProtocol.SetThinkingLevel("off")));
     }
 
     [Fact]

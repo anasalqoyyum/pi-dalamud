@@ -46,6 +46,8 @@ public sealed class Plugin : IDalamudPlugin
             SendPrompt,
             StopActiveRequest,
             StartNewSession,
+            SelectModel,
+            SetThinkingLevel,
             OpenConfigUi);
         configWindow = new ConfigWindow(Configuration, SaveAndReconnect);
         windowSystem.AddWindow(chatWindow);
@@ -164,6 +166,42 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         model.CancelNewSessionRequest();
+        ChatGui.PrintError("Bridge is unavailable.", "Pi");
+        return false;
+    }
+
+    private bool SelectModel(string preset)
+    {
+        if (!model.TryBeginModelChange())
+        {
+            ChatGui.PrintError("Stop the active request before changing the model.", "Pi");
+            return false;
+        }
+
+        if (bridgeClient?.TrySelectModel(preset) == true)
+        {
+            return true;
+        }
+
+        model.FailQueuedModelChange();
+        ChatGui.PrintError("Bridge is unavailable.", "Pi");
+        return false;
+    }
+
+    private bool SetThinkingLevel(string level)
+    {
+        if (!model.TryBeginThinkingLevelChange())
+        {
+            ChatGui.PrintError("Stop the active request before changing thinking level.", "Pi");
+            return false;
+        }
+
+        if (bridgeClient?.TrySetThinkingLevel(level) == true)
+        {
+            return true;
+        }
+
+        model.FailQueuedThinkingLevelChange();
         ChatGui.PrintError("Bridge is unavailable.", "Pi");
         return false;
     }

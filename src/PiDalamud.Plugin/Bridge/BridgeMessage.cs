@@ -24,6 +24,13 @@ public sealed record StatusEvent(
 
 public sealed record AbortedEvent(string RequestId) : BridgeEvent;
 
+public sealed record ModelStateEvent(
+    string? Preset,
+    string? Provider,
+    string? ModelId,
+    string? ThinkingLevel,
+    IReadOnlyList<string> AvailableThinkingLevels) : BridgeEvent;
+
 public sealed record BridgeErrorEvent(string Code, string Message, string? RequestId) : BridgeEvent;
 
 public static class BridgeProtocol
@@ -58,6 +65,7 @@ public static class BridgeProtocol
                 "settled" => ParseSettled(root),
                 "status" => ParseStatus(root),
                 "aborted" => ParseAborted(root),
+                "model_state" => ParseModelState(root),
                 "error" => ParseError(root),
                 _ => throw new BridgeProtocolException("Bridge message type is unknown"),
             };
@@ -88,6 +96,18 @@ public static class BridgeProtocol
     public static byte[] GetStatus() => WriteMessage(writer => WriteEnvelope(writer, "get_status"));
 
     public static byte[] NewSession() => WriteMessage(writer => WriteEnvelope(writer, "new_session"));
+
+    public static byte[] SelectModel(string preset) => WriteMessage(writer =>
+    {
+        WriteEnvelope(writer, "select_model");
+        writer.WriteString("preset", preset);
+    });
+
+    public static byte[] SetThinkingLevel(string level) => WriteMessage(writer =>
+    {
+        WriteEnvelope(writer, "set_thinking_level");
+        writer.WriteString("level", level);
+    });
 
     private static ReadyEvent ParseReady(JsonElement root)
     {
@@ -133,6 +153,25 @@ public static class BridgeProtocol
         return new AbortedEvent(RequiredString(root, "requestId"));
     }
 
+    private static ModelStateEvent ParseModelState(JsonElement root)
+    {
+        RequireExactProperties(
+            root,
+            "version",
+            "type",
+            "preset",
+            "provider",
+            "modelId",
+            "thinkingLevel",
+            "availableThinkingLevels");
+        return new ModelStateEvent(
+            NullableString(root, "preset"),
+            NullableString(root, "provider"),
+            NullableString(root, "modelId"),
+            NullableString(root, "thinkingLevel"),
+            RequiredStringArray(root, "availableThinkingLevels"));
+    }
+
     private static BridgeErrorEvent ParseError(JsonElement root)
     {
         RequireExactProperties(root, ["requestId"], "version", "type", "code", "message");
@@ -162,6 +201,35 @@ public static class BridgeProtocol
         }
 
         return ElementString(property, propertyName, allowEmpty);
+    }
+
+    private static string? NullableString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property))
+        {
+            throw new BridgeProtocolException($"Bridge message is missing {propertyName}");
+        }
+
+        return property.ValueKind == JsonValueKind.Null
+            ? null
+            : ElementString(property, propertyName);
+    }
+
+    private static IReadOnlyList<string> RequiredStringArray(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.Array)
+        {
+            throw new BridgeProtocolException($"Bridge message {propertyName} is not an array");
+        }
+
+        var values = new List<string>();
+        foreach (var item in property.EnumerateArray())
+        {
+            values.Add(ElementString(item, propertyName));
+        }
+
+        return values;
     }
 
     private static string ElementString(JsonElement property, string propertyName, bool allowEmpty = false)
