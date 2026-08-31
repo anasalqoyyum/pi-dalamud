@@ -732,6 +732,12 @@ function messageLogContext(
   if ("code" in message) context.code = message.code;
   if (message.type === "prompt" || message.type === "settled")
     context.textLength = [...message.text].length;
+  if (message.type === "model_state") {
+    context.preset = message.preset;
+    context.provider = message.provider;
+    context.modelId = message.modelId;
+    context.thinkingLevel = message.thinkingLevel;
+  }
 
   return context;
 }

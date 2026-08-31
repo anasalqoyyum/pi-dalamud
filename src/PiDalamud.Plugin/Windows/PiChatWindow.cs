@@ -18,10 +18,6 @@ public sealed class PiChatWindow : Window, IDisposable
     private int displayedTranscriptCount;
     private bool newSessionModalOpen;
     private bool openNewSessionModal;
-    private string selectedModelPreset = "luna";
-
-    private const string ModelPopupId = "PiModelSelector";
-    private const string ModelPopupTitle = "Select a Pi model###PiModelSelector";
 
     private static readonly ModelOption[] ModelOptions =
     [
@@ -91,7 +87,6 @@ public sealed class PiChatWindow : Window, IDisposable
         DrawActions();
         ImGui.TextUnformatted(model.StatusLine);
         DrawNewSessionModal();
-        DrawModelModal();
     }
 
     private void DrawConnectionStatus()
@@ -144,12 +139,29 @@ public sealed class PiChatWindow : Window, IDisposable
     {
         ImGui.TextDisabled("Model");
         ImGui.SameLine();
-        ImGui.TextUnformatted(CurrentModelLabel());
-        ImGui.SameLine();
+        ImGui.SetNextItemWidth(260);
         ImGui.BeginDisabled(!model.CanChangeSettings);
-        if (ImGui.Button("Change##PiModel"u8))
+        if (ImGui.BeginCombo("##PiModel", CurrentModelLabel()))
         {
-            RequestModelSelection();
+            foreach (var option in ModelOptions)
+            {
+                var selected = model.ModelPreset == option.Preset;
+                if (ImGui.Selectable($"{option.Label}##{option.Preset}", selected) &&
+                    !selected &&
+                    selectModel(option.Preset))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+
+                if (selected)
+                {
+                    ImGui.SetItemDefaultFocus();
+                }
+
+                ImGui.TextDisabled($"{option.ModelId} - default thinking {FormatThinkingLevel(option.DefaultThinkingLevel)}");
+            }
+
+            ImGui.EndCombo();
         }
 
         ImGui.EndDisabled();
@@ -261,52 +273,6 @@ public sealed class PiChatWindow : Window, IDisposable
         ImGui.EndPopup();
     }
 
-    private void RequestModelSelection()
-    {
-        OpenAndFocus();
-        selectedModelPreset = IsKnownModelPreset(model.ModelPreset)
-            ? model.ModelPreset!
-            : ModelOptions[0].Preset;
-        ImGui.OpenPopup(ModelPopupId);
-    }
-
-    private void DrawModelModal()
-    {
-        if (!ImGui.BeginPopupModal(ModelPopupTitle, ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            return;
-        }
-
-        ImGui.TextUnformatted("Changing the model applies its recommended thinking level.");
-        ImGui.Separator();
-        foreach (var option in ModelOptions)
-        {
-            var selected = selectedModelPreset == option.Preset;
-            if (ImGui.Selectable($"{option.Label}##{option.Preset}", selected, ImGuiSelectableFlags.None, new Vector2(420, 0)))
-            {
-                selectedModelPreset = option.Preset;
-            }
-
-            ImGui.TextDisabled($"{option.ModelId} - default thinking {FormatThinkingLevel(option.DefaultThinkingLevel)}");
-        }
-
-        ImGui.Separator();
-        ImGui.BeginDisabled(!model.CanChangeSettings);
-        if (ImGui.Button("Apply##PiModel"u8) && selectModel(selectedModelPreset))
-        {
-            ImGui.CloseCurrentPopup();
-        }
-
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (ImGui.Button("Cancel##PiModel"u8))
-        {
-            ImGui.CloseCurrentPopup();
-        }
-
-        ImGui.EndPopup();
-    }
-
     private string CurrentModelLabel()
     {
         var option = FindModelOption(model.ModelPreset);
@@ -325,8 +291,6 @@ public sealed class PiChatWindow : Window, IDisposable
 
     private static ModelOption? FindModelOption(string? preset) =>
         ModelOptions.FirstOrDefault(option => option.Preset == preset);
-
-    private static bool IsKnownModelPreset(string? preset) => FindModelOption(preset) is not null;
 
     private static string FormatThinkingLevel(string? level)
     {

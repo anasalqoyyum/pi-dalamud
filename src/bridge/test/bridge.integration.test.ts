@@ -97,7 +97,8 @@ describe("authenticated WebSocket bridge", () => {
   });
 
   it("selects a fixed model and exposes its thinking capabilities", async () => {
-    const { url } = await startBridge();
+    const logs: LogEntry[] = [];
+    const { url } = await startBridge(undefined, logs);
     const client = await connect(url);
 
     await expect(client.next()).resolves.toMatchObject({
@@ -122,6 +123,17 @@ describe("authenticated WebSocket bridge", () => {
         "xhigh",
         "max",
       ],
+    });
+    expect(logs).toContainEqual({
+      level: "info",
+      event: "plugin_message_sent",
+      context: {
+        type: "model_state",
+        preset: "luna",
+        provider: "openai-codex",
+        modelId: "gpt-5.6-luna",
+        thinkingLevel: "max",
+      },
     });
 
     client.send({ version: 1, type: "select_model", preset: "sol" });

@@ -38,7 +38,7 @@ The dedicated window contains:
 - A scrollable transcript with user and assistant messages.
 - A multiline prompt editor.
 - **Send**, **Stop**, and **New session** buttons.
-- A model selector modal exposing `openai-codex/gpt-5.6-luna` (`max`) and `openai-codex/gpt-5.6-sol` (`high`).
+- A model selector dropdown exposing `openai-codex/gpt-5.6-luna` (`max`) and `openai-codex/gpt-5.6-sol` (`high`).
 - A thinking-level selector populated from Pi's `get_available_thinking_levels` response, including `off` when supported.
 - A connection indicator with `Disconnected`, `Connecting`, `Idle`, `Running`, and `Error` states.
 - One compact status line for the current request.
