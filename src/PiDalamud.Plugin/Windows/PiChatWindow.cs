@@ -18,9 +18,10 @@ public sealed class PiChatWindow : Window, IDisposable
     private int displayedTranscriptCount;
     private bool newSessionModalOpen;
     private bool openNewSessionModal;
-    private bool modelModalOpen;
-    private bool openModelModal;
     private string selectedModelPreset = "luna";
+
+    private const string ModelPopupId = "PiModelSelector";
+    private const string ModelPopupTitle = "Select a Pi model###PiModelSelector";
 
     private static readonly ModelOption[] ModelOptions =
     [
@@ -266,20 +267,12 @@ public sealed class PiChatWindow : Window, IDisposable
         selectedModelPreset = IsKnownModelPreset(model.ModelPreset)
             ? model.ModelPreset!
             : ModelOptions[0].Preset;
-        openModelModal = true;
+        ImGui.OpenPopup(ModelPopupId);
     }
 
     private void DrawModelModal()
     {
-        const string title = "Select a Pi model###PiModelSelector";
-        if (openModelModal)
-        {
-            ImGui.OpenPopup(title);
-            modelModalOpen = true;
-            openModelModal = false;
-        }
-
-        if (!ImGui.BeginPopupModal(title, ref modelModalOpen, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.BeginPopupModal(ModelPopupTitle, ImGuiWindowFlags.AlwaysAutoResize))
         {
             return;
         }
@@ -301,7 +294,6 @@ public sealed class PiChatWindow : Window, IDisposable
         ImGui.BeginDisabled(!model.CanChangeSettings);
         if (ImGui.Button("Apply##PiModel"u8) && selectModel(selectedModelPreset))
         {
-            modelModalOpen = false;
             ImGui.CloseCurrentPopup();
         }
 
@@ -309,7 +301,6 @@ public sealed class PiChatWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Cancel##PiModel"u8))
         {
-            modelModalOpen = false;
             ImGui.CloseCurrentPopup();
         }
 
