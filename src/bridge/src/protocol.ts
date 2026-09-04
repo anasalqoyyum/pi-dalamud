@@ -169,6 +169,78 @@ export function parsePluginMessage(input: string): PluginMessage {
   return result.data;
 }
 
+export type SettledMessage = Extract<
+  BridgeMessage,
+  { readonly type: "settled" }
+>;
+
+/**
+ * Appended to `settled` text when a completed response does not fit one frame.
+ * Documented verbatim in docs/protocol-v1.md.
+ */
+export const SETTLED_TRUNCATION_MARKER =
+  "\n[Response truncated to fit the bridge message size limit]";
+
+/**
+ * Build the `settled` message for a completed response. Pi responses have no
+ * fixed length, so when the serialized frame would exceed the protocol limit
+ * the text is cut to the longest code-point-aligned prefix that fits and the
+ * truncation marker is appended. This keeps every outbound frame within the
+ * limit the plugin's receive loop enforces.
+ */
+export function buildSettledMessage(
+  requestId: string,
+  sessionId: string,
+  text: string,
+): { readonly message: SettledMessage; readonly truncated: boolean } {
+  const envelope = {
+    version: PROTOCOL_VERSION,
+    type: "settled" as const,
+    requestId,
+    sessionId,
+  };
+  // Key order matches the returned message, so this measures the exact bytes
+  // `send()` will serialize. The two bytes quoted here belong to the text
+  // field, which the budget below replaces.
+  const fixed = JSON.stringify({ ...envelope, text: "" });
+  const textBudget =
+    MAX_FRAME_BYTES - Buffer.byteLength(fixed, "utf8") + 2;
+
+  if (Buffer.byteLength(JSON.stringify(text), "utf8") <= textBudget) {
+    return { message: { ...envelope, text }, truncated: false };
+  }
+
+  // JSON escaping is per character, so the serialized size of prefix + marker
+  // is the sum of their sizes minus one pair of quotes.
+  const markerSize = Buffer.byteLength(
+    JSON.stringify(SETTLED_TRUNCATION_MARKER),
+    "utf8",
+  );
+  return {
+    message: {
+      ...envelope,
+      text: `${truncateWithinJsonBudget(text, textBudget - markerSize + 2)}${SETTLED_TRUNCATION_MARKER}`,
+    },
+    truncated: true,
+  };
+}
+
+function truncateWithinJsonBudget(text: string, budget: number): string {
+  // Longest code-point-aligned prefix whose JSON serialization, including the
+  // surrounding quotes, fits the byte budget. Only the truncation path pays
+  // the per-code-point cost.
+  let used = 2;
+  let end = 0;
+  for (const unit of Array.from(text)) {
+    const size = Buffer.byteLength(JSON.stringify(unit), "utf8") - 2;
+    if (used + size > budget) break;
+    used += size;
+    end += unit.length;
+  }
+
+  return text.slice(0, end);
+}
+
 export class ProtocolMessageError extends Error {
   public constructor(
     public readonly code: "invalid_message" | "message_too_large",

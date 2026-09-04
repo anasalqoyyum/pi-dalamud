@@ -22,6 +22,7 @@ import {
   MAX_FRAME_BYTES,
   PROTOCOL_VERSION,
   ProtocolMessageError,
+  buildSettledMessage,
   parsePluginMessage,
   type BridgeErrorCode,
   type BridgeMessage,
@@ -548,15 +549,22 @@ export class BridgeServer {
       const text = await pi.getLastAssistantText();
       if (pi !== this.pi || this.activeRequest?.requestId !== active.requestId)
         return;
+      const settled = buildSettledMessage(
+        active.requestId,
+        this.sessionId,
+        text,
+      );
       this.activeRequest = undefined;
       this.state = "idle";
-      this.broadcast({
-        version: PROTOCOL_VERSION,
-        type: "settled",
-        requestId: active.requestId,
-        sessionId: this.sessionId,
-        text,
-      });
+      if (settled.truncated) {
+        this.options.log.info("response_truncated", {
+          requestId: active.requestId,
+          textLength: [...text].length,
+          sentTextLength: [...settled.message.text].length,
+        });
+      }
+
+      this.broadcast(settled.message);
     } catch (error: unknown) {
       this.options.log.error("internal_error", { error: errorName(error) });
       this.sendActiveError("internal_error", "Pi response could not be read");

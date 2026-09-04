@@ -8,6 +8,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { BridgeServer } from "../src/ws-server.js";
 import { PiRpcProcess } from "../src/pi-rpc-process.js";
+import {
+  MAX_FRAME_BYTES,
+  SETTLED_TRUNCATION_MARKER,
+} from "../src/protocol.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fakePi = join(here, "../../../test-fixtures/fake-pi-rpc.mjs");
@@ -203,6 +207,42 @@ describe("authenticated WebSocket bridge", () => {
       ),
     ).toBe(true);
     expect(JSON.stringify(logs)).not.toContain(prompt);
+  });
+
+  it("truncates a Pi response that would exceed the frame limit", async () => {
+    const logs: LogEntry[] = [];
+    const { url } = await startBridge(undefined, logs);
+    const client = await connect(url);
+    await client.next();
+    const requestId = crypto.randomUUID();
+    client.send({
+      version: 1,
+      type: "prompt",
+      requestId,
+      text: "__oversized__",
+    });
+    await expect(client.next()).resolves.toMatchObject({
+      type: "accepted",
+      requestId,
+    });
+
+    const settled = (await client.next()) as { text: string };
+    expect(settled).toMatchObject({
+      version: 1,
+      type: "settled",
+      requestId,
+      sessionId: "fake-session-1",
+    });
+    expect(Buffer.byteLength(JSON.stringify(settled), "utf8"))
+      .toBeLessThanOrEqual(MAX_FRAME_BYTES);
+    expect(settled.text.startsWith("oversized head")).toBe(true);
+    expect(settled.text).not.toContain("oversized tail");
+    expect(settled.text.endsWith(SETTLED_TRUNCATION_MARKER)).toBe(true);
+
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: "response_truncated" }),
+    );
+    expect(JSON.stringify(logs)).not.toContain("oversized");
   });
 
   it("orders accepted before settled when Pi settles before its prompt response", async () => {

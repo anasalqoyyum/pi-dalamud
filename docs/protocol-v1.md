@@ -16,7 +16,7 @@ Each WebSocket text frame contains one JSON object. Every object has `"version":
 
 ## Bridge logs
 
-The bridge writes one JSON object per log line. It records `plugin_message_received` and `plugin_message_sent` events with the message type, request ID when present, and text length for prompts or completed responses. It records each Pi `thinking_start` event as `pi_thinking` with the active request ID when available.
+The bridge writes one JSON object per log line. It records `plugin_message_received` and `plugin_message_sent` events with the message type, request ID when present, and text length for prompts or completed responses. It records each Pi `thinking_start` event as `pi_thinking` with the active request ID when available. When a completed response does not fit one frame, it records `response_truncated` with the original and sent text lengths.
 
 Logs do not contain bearer tokens, prompt text, completed response text, or thinking text.
 
@@ -138,6 +138,14 @@ Pi accepted the prompt. The plugin appends the user entry at this point.
 ```
 
 The bridge sends this only after Pi emits `agent_settled` and `get_last_assistant_text` returns text. There are no token delta messages in protocol v1.
+
+Pi responses have no fixed length, so the bridge caps `text` before sending. When the serialized message would exceed 65,536 bytes, the bridge keeps the longest prefix of the response that fits, cut on a Unicode code point boundary, and appends this marker:
+
+```text
+\n[Response truncated to fit the bridge message size limit]
+```
+
+A truncated frame is still a valid `settled` message, and the marker makes the cut visible in the transcript. Only `settled` can approach the frame limit; every other message is bounded by its fixed fields.
 
 ### `status`
 

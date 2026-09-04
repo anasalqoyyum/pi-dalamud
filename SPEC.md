@@ -344,6 +344,8 @@ This means Pi accepted the prompt. It does not mean Pi finished.
 
 Send `settled` only after Pi emits `agent_settled`. Obtain the final text from the last assistant message or the RPC `get_last_assistant_text` command.
 
+Pi responses have no fixed length. When the serialized message would exceed 65,536 bytes, keep the longest prefix that fits, cut on a Unicode code point boundary, and append the marker documented in `docs/protocol-v1.md`. Log `response_truncated` with the original and sent text lengths, never the text.
+
 #### `status`
 
 ```json

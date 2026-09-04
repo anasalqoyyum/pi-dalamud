@@ -136,6 +136,15 @@ function handle(command) {
         process.stderr.write("fake diagnostic only\n");
       }
 
+      if (command.message === "__oversized__") {
+        lastAssistantText = `oversized head ${"y".repeat(70_000)} oversized tail`;
+        setTimeout(() => {
+          active = false;
+          send({ type: "agent_settled" });
+        }, 5);
+        break;
+      }
+
       lastAssistantText =
         command.message === "__unicode__"
           ? "line one\u2028line two\u2029done"
