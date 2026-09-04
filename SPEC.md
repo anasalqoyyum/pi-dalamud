@@ -142,7 +142,7 @@ Versions in this table were current in the source manifests on 2026-08-29. Reval
 | ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------- |
 | Plugin build       | `Dalamud.NET.Sdk`                                                                    | `15.0.0` in the official SamplePlugin  |
 | Plugin language    | C# and the .NET runtime selected by the Dalamud SDK                                  | SDK-managed                            |
-| Plugin UI          | `Dalamud.Interface.Windowing` and ImGui.NET                                          | Provided by Dalamud                    |
+| Plugin UI          | `Dalamud.Interface.Windowing` and `Dalamud.Bindings.ImGui`                           | Provided by Dalamud                    |
 | Plugin services    | `IDalamudPluginInterface`, `ICommandManager`, `IChatGui`, `IFramework`, `IPluginLog` | Provided by Dalamud                    |
 | Plugin networking  | `System.Net.WebSockets.ClientWebSocket`                                              | .NET built-in                          |
 | Plugin JSON        | `System.Text.Json`                                                                   | .NET built-in                          |
@@ -154,7 +154,7 @@ Versions in this table were current in the source manifests on 2026-08-29. Reval
 | Message validation | `zod`                                                                                | Pin the current stable version         |
 | Tests              | Vitest                                                                               | Pin the current stable version         |
 
-Do not add React, Electron, WPF, Blazor, ASP.NET, Express, Fastify, or a model-provider SDK. The plugin uses ImGui. The bridge uses `ws`. Pi owns model-provider access.
+Do not add React, Electron, WPF, Blazor, ASP.NET, Express, Fastify, or a model-provider SDK. The plugin uses ImGui through `Dalamud.Bindings.ImGui`, Dalamud's official binding, which replaced the `ImGuiNET` namespace in API 13. The bridge uses `ws`. Pi owns model-provider access.
 
 ## Repository layout
 
