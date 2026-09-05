@@ -22,7 +22,8 @@ public sealed class PiChatWindow : Window, IDisposable
     private static readonly ModelOption[] ModelOptions =
     [
         new("luna", "GPT-5.6 Luna", "openai-codex/gpt-5.6-luna", "max"),
-        new("sol", "GPT-5.6 Sol", "openai-codex/gpt-5.6-sol", "high"),
+        new("sol", "GPT-5.6 Sol", "openai-codex/gpt-5.6-sol", "medium"),
+        new("astra", "GPT-6 Astra", "openai-codex/gpt-6-astra", "low"),
     ];
 
     public PiChatWindow(

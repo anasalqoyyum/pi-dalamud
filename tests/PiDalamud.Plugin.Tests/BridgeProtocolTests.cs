@@ -44,6 +44,22 @@ public sealed class BridgeProtocolTests
     }
 
     [Fact]
+    public void ParsesAstraModelState()
+    {
+        var message = BridgeProtocol.Parse(Encoding.UTF8.GetBytes(
+            """{"version":1,"type":"model_state","preset":"astra","provider":"openai-codex","modelId":"gpt-6-astra","thinkingLevel":"low","availableThinkingLevels":["low","medium","high"]}"""));
+
+        var state = Assert.IsType<ModelStateEvent>(message);
+        Assert.Equal("astra", state.Preset);
+        Assert.Equal("gpt-6-astra", state.ModelId);
+        Assert.Equal("low", state.ThinkingLevel);
+        Assert.Equal(["low", "medium", "high"], state.AvailableThinkingLevels);
+        Assert.Equal(
+            "{\"version\":1,\"type\":\"select_model\",\"preset\":\"astra\"}",
+            Encoding.UTF8.GetString(BridgeProtocol.SelectModel("astra")));
+    }
+
+    [Fact]
     public void ParsesEveryBridgeState()
     {
         foreach (var (wireState, expected) in new[]

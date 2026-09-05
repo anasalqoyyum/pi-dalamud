@@ -12,7 +12,7 @@ export const thinkingLevelSchema = z.enum([
 
 export type ThinkingLevel = z.infer<typeof thinkingLevelSchema>;
 
-export const modelPresetNames = ["luna", "sol"] as const;
+export const modelPresetNames = ["luna", "sol", "astra"] as const;
 export const modelPresetSchema = z.enum(modelPresetNames);
 export type ModelPreset = z.infer<typeof modelPresetSchema>;
 
@@ -34,7 +34,13 @@ export const modelPresets = {
     label: "GPT-5.6 Sol",
     provider: "openai-codex",
     modelId: "gpt-5.6-sol",
-    defaultThinkingLevel: "high",
+    defaultThinkingLevel: "medium",
+  },
+  astra: {
+    label: "GPT-6 Astra",
+    provider: "openai-codex",
+    modelId: "gpt-6-astra",
+    defaultThinkingLevel: "low",
   },
 } satisfies Record<ModelPreset, ModelPresetDefinition>;
 

@@ -82,7 +82,8 @@ The only supported presets are:
 | Preset | Pi provider/model | Default thinking |
 | --- | --- | --- |
 | `luna` | `openai-codex/gpt-5.6-luna` | `max` |
-| `sol` | `openai-codex/gpt-5.6-sol` | `high` |
+| `sol` | `openai-codex/gpt-5.6-sol` | `medium` |
+| `astra` | `openai-codex/gpt-6-astra` | `low` |
 
 The bridge rejects this message while a prompt is active. A successful model change also applies the preset's default thinking level.
 

@@ -10,6 +10,7 @@ let thinkingLevel = "max";
 const thinkingLevelsByModel = {
   "gpt-5.6-luna": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
   "gpt-5.6-sol": ["off", "minimal", "low", "medium", "high"],
+  "gpt-6-astra": ["low", "medium", "high"],
 };
 
 if (process.env.FAKE_PI_IGNORE_TERM === "1") {

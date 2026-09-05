@@ -147,7 +147,7 @@ describe("authenticated WebSocket bridge", () => {
       preset: "sol",
       provider: "openai-codex",
       modelId: "gpt-5.6-sol",
-      thinkingLevel: "high",
+      thinkingLevel: "medium",
       availableThinkingLevels: ["off", "minimal", "low", "medium", "high"],
     });
 
@@ -162,6 +162,17 @@ describe("authenticated WebSocket bridge", () => {
       type: "model_state",
       preset: "sol",
       thinkingLevel: "off",
+    });
+
+    client.send({ version: 1, type: "select_model", preset: "astra" });
+    await expect(client.next()).resolves.toEqual({
+      version: 1,
+      type: "model_state",
+      preset: "astra",
+      provider: "openai-codex",
+      modelId: "gpt-6-astra",
+      thinkingLevel: "low",
+      availableThinkingLevels: ["low", "medium", "high"],
     });
   });
 

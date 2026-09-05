@@ -15,6 +15,7 @@
     "lint:plugin": "dotnet build src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --nologo --no-restore",
     "format": "pnpm format:bridge && pnpm format:plugin",
     "format:bridge": "pnpm --dir src/bridge format",
-    "format:plugin": "dotnet format whitespace src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --verify-no-changes --no-restore"
+    "format:plugin": "dotnet format whitespace src/PiDalamud.Plugin/PiDalamud.Plugin.csproj --verify-no-changes --no-restore",
+    "start:bridge": "pnpm --dir src/bridge start"
   }
 }

@@ -38,12 +38,12 @@ The dedicated window contains:
 - A scrollable transcript with user and assistant messages.
 - A multiline prompt editor.
 - **Send**, **Stop**, and **New session** buttons.
-- A model selector dropdown exposing `openai-codex/gpt-5.6-luna` (`max`) and `openai-codex/gpt-5.6-sol` (`high`).
+- A model selector dropdown exposing `openai-codex/gpt-5.6-luna` (`max`), `openai-codex/gpt-5.6-sol` (`medium`), and `openai-codex/gpt-6-astra` (`low`).
 - A thinking-level selector populated from Pi's `get_available_thinking_levels` response, including `off` when supported.
 - A connection indicator with `Disconnected`, `Connecting`, `Idle`, `Running`, and `Error` states.
 - One compact status line for the current request.
 
-On startup, Pi uses the provider/model configured in Pi's own settings. The bridge reports that current model, and the selector changes it at runtime only through the two fixed presets above.
+On startup, Pi uses the provider/model configured in Pi's own settings. The bridge reports that current model, and the selector changes it at runtime only through the three fixed presets above.
 
 The MVP returns only the completed assistant response. It does not stream token deltas. While Pi works, the window shows `Running` and the native chat may show `[Pi] Working...` once.
 
@@ -63,7 +63,7 @@ When Pi finishes, the plugin adds the final text to the transcript. It may print
 - Pi subprocess control through strict JSONL RPC.
 - Final, non-streamed assistant responses.
 - Abort, status, new session, reconnect, and clean plugin unload.
-- Two fixed model presets and capability-aware thinking-level changes while Pi is idle.
+- Three fixed model presets and capability-aware thinking-level changes while Pi is idle.
 - Unit tests for protocol parsing and bridge behavior.
 - A fake Pi process for integration tests.
 
@@ -289,7 +289,8 @@ The bridge accepts only these fixed presets and applies the listed default think
 | Preset | Pi provider/model | Default thinking |
 | ------ | ----------------- | ---------------- |
 | `luna` | `openai-codex/gpt-5.6-luna` | `max` |
-| `sol`  | `openai-codex/gpt-5.6-sol`  | `high` |
+| `sol`  | `openai-codex/gpt-5.6-sol`  | `medium` |
+| `astra` | `openai-codex/gpt-6-astra` | `low` |
 
 Reject this request while Pi runs.
 
